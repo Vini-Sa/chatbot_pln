@@ -1,8 +1,9 @@
 [README.md](https://github.com/user-attachments/files/23529484/README.md)
 # Chatbot SEI Julgar
 
-Este projeto implementa um **assistente virtual** baseado em **LangChain**, **LLMs Groq**, e **RAG (Retrieval-Augmented Generation)**, voltado para auxiliar no uso do módulo **SEI Julgar**.  
-O chatbot utiliza processamento de linguagem natural (PLN) em português e recuperação de contexto a partir de documentação oficial.
+Este projeto apresenta um assistente virtual desenvolvido para apoiar o uso do módulo SEI Julgar, oferecendo respostas rápidas e contextualizadas com base no manual oficial.
+
+O chatbot utiliza técnicas de Processamento de Linguagem Natural (PLN) em português, LangChain, modelos da Groq e a arquitetura RAG (Retrieval-Augmented Generation), permitindo buscar e interpretar trechos relevantes da documentação para orientar o usuário de forma precisa.
 
 ---
 
@@ -44,7 +45,7 @@ source venv/bin/activate
 ```
 
 ### 3. Instalar as dependências
-
+(Não esqueça de colocar o requirements.txt no projeto)
 Com o ambiente virtual ativado:
 ```bash
 pip install -r requirements.txt
@@ -66,9 +67,12 @@ python -m spacy download pt_core_news_md
 
 Crie um arquivo chamado `.env` na raiz do projeto e adicione:
 ```
-GROQ_API_KEY=sua_chave_aqui
+GROQ_API_KEY="sua_chave_aqui"
 ```
-
+Iremos deixar nossa chave para testes da disciplina:
+```
+GROQ_API_KEY="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"
+```
 > A chave é necessária para acessar o modelo da **Groq**.  
 > Você pode obtê-la em: [https://console.groq.com](https://console.groq.com)
 
@@ -78,10 +82,10 @@ No terminal (com o ambiente virtual ativo):
 ```bash
 streamlit run chatbot_sei.py
 ```
-
-O navegador abrirá automaticamente na interface do chatbot.
-
 ---
+O navegador abrirá automaticamente na interface do chatbot.
+Primeiro carregamento do chatbot irá demorar um pouco, pois serão baixados
+os modelos e criado a base do Chroma.
 
 ## Estrutura do Projeto
 
@@ -119,18 +123,9 @@ chatbot_sei_julgar/
 
 ---
 
-## Publicação no GitHub
-
-Se desejar subir o projeto:
-```bash
-git add .
-git commit -m "Versão inicial do chatbot SEI Julgar"
-git push origin main
-```
-
----
 
 ## Autor
 
-Desenvolvido por **Vinicius Sá**  
-Tribunal — Projeto de Chatbot com LangChain e Streamlit.
+Desenvolvido por **Vinicius Sá** e **André Cacau**
+
+Assistente Virtual do SEI Julgar
