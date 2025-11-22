@@ -1,8 +1,12 @@
+
+
 # ************ IMPORTAÇÕES PRINCIPAIS **************************
 
 import streamlit as st
 from pathlib import Path
-import requests, os, time
+import requests
+import os
+import time
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import AIMessage, HumanMessage
@@ -13,105 +17,6 @@ from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
-
-
-# *********** MÓDULO DE PLN – Pré-processamento e enriquecimento semântico ******************
-
-import re
-import spacy
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from sentence_transformers import SentenceTransformer, util
-
-# Tenta carregar o modelo SpaCy em português (usa versão menor se a maior não estiver disponível)
-try:
-    nlp = spacy.load("pt_core_news_md")
-except Exception:
-    try:
-        nlp = spacy.load("pt_core_news_sm")
-    except Exception:
-        st.error("Erro: modelo SpaCy não encontrado. Execute: !python -m spacy download pt_core_news_md")
-        st.stop()
-
-# Carrega o modelo de embeddings para cálculo de similaridade semântica
-embedder = SentenceTransformer("multi-qa-MiniLM-L6-cos-v1")
-
-# Carrega stopwords da língua portuguesa (ou cria lista vazia em caso de falha)
-try:
-    stop_words = set(stopwords.words("portuguese"))
-except Exception:
-    stop_words = set()
-
-# Função para normalizar e remover stopwords - Normaliza o texto removendo pontuação, acentuação e stopwords.
-def normalize_text(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"[^a-zA-ZÀ-ÿ0-9\s]", " ", text)
-    try:
-        tokens = [t for t in word_tokenize(text, language="portuguese") if t not in stop_words]
-    except Exception:
-        tokens = text.split()
-    return " ".join(tokens).strip()
-
-# Função para analizar a intenção do usuário - Identifica a intenção geral do usuário com base em palavras-chave simples.
-def analyze_intent(text: str) -> str:
-    if any(x in text for x in ["como", "de que forma", "procedimento", "passo", "como faço", "instrução"]):
-        return "pedido de instrução"
-    if any(x in text for x in ["por que", "motivo", "razão", "porquê"]):
-        return "pedido de justificativa"
-    if any(x in text for x in ["quem", "órgão", "setor", "quem é", "responsável"]):
-        return "pedido de identificação"
-    return "outros"
-
-# Função para analisar o sentimento da pergunta - Analisa o sentimento geral da frase com base em palavras positivas e negativas.
-def analyze_sentiment(text: str) -> str:
-    try:
-        doc = nlp(text)
-        positives = sum(1 for tok in doc if tok.lemma_.lower() in {"bom", "ótimo", "excelente", "favorável", "positivo", "conforme"})
-        negatives = sum(1 for tok in doc if tok.lemma_.lower() in {"ruim", "erro", "problema", "falha", "negativo", "indevido"})
-        if positives > negatives:
-            return "positivo"
-        if negatives > positives:
-            return "negativo"
-        return "neutro"
-    except Exception:
-        return "neutro"
-
-# Função para extrair as entidades da pergunta - Extrai entidades nomeadas do texto (pessoas, órgãos, locais, etc).
-def extract_entities(text: str) -> dict:
-    doc = nlp(text)
-    ents = {}
-    for ent in doc.ents:
-        ents.setdefault(ent.label_, []).append(ent.text)
-    return ents
-
-#Função para expandir semânticamente a pergunta - Adiciona termos semanticamente próximos para melhorar a recuperação de contexto.
-def semantic_expansion(text: str) -> str:
-    base_terms = ["processo", "documento", "protocolo", "julgamento", "tramitação", "autuação", "andamento", "petição", "decisão", "parecer"]
-    try:
-        query_emb = embedder.encode(text, convert_to_tensor=True)
-        base_embs = embedder.encode(base_terms, convert_to_tensor=True)
-        scores = util.pytorch_cos_sim(query_emb, base_embs)[0]
-        best_terms = [base_terms[i] for i, s in enumerate(scores) if float(s) > 0.40]
-        additions = " ".join([t for t in best_terms if t not in text])
-        return (text + " " + additions).strip()
-    except Exception:
-        return text
-
-# Pipeline completo das funções
-def preprocess_input(text: str) -> str:
-    normalized = normalize_text(text)
-    intent = analyze_intent(normalized)
-    sentiment = analyze_sentiment(normalized)
-    entities = extract_entities(normalized)
-    expanded = semantic_expansion(normalized)
-
-    print("[PLN] Intenção:", intent)
-    print("[PLN] Sentimento:", sentiment)
-    print("[PLN] Entidades:", entities)
-    print("[PLN] Pergunta expandida:", expanded)
-
-    return expanded
 
 
 # ***************CONFIGURAÇÕES DO STREAMLIT E INTERFACE*********************
@@ -210,7 +115,6 @@ section[data-testid="stSidebar"] {
   margin-left: 8px !important;
 }
 
-
 /* ====== BOTÕES ====== */
 .stButton button {
   background-color: var(--accent-green) !important;
@@ -220,6 +124,7 @@ section[data-testid="stSidebar"] {
   border-radius: 20px !important;
   font-size: 14px !important;
 }
+
 @keyframes fadeIn {
   from {opacity: 0; transform: translateY(6px);}
   to {opacity: 1; transform: translateY(0);}
@@ -228,26 +133,8 @@ section[data-testid="stSidebar"] {
 #MainMenu, footer { visibility: hidden; }
 header { visibility: visible !important; }
 
-/* ====== BOTÃO DE MENU ====== */
-.toggle-btn {
-  position: fixed;
-  top: 15px;
-  left: 15px;
-  background-color: var(--primary);
-  color: white;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-weight: bold;
-  cursor: pointer;
-  z-index: 1000;
-  transition: background 0.3s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-}
-.toggle-btn:hover { background-color: #1c6fa1; }
 </style>
 
-<!-- BOTÃO FLUTUANTE PARA REABRIR SIDEBAR -->
-<div class="toggle-btn" onclick="window.parent.document.querySelector('button[kind=header]')?.click()">☰ Menu</div>
 """,
     unsafe_allow_html=True,
 )
@@ -312,12 +199,13 @@ st.markdown(
 
 @st.cache_resource
 def load_llm():
-    #Carrega o modelo de linguagem da API Groq
+    # Carrega o modelo de linguagem da API Groq
     return ChatGroq(model=id_model, temperature=temperature, api_key=os.getenv("GROQ_API_KEY"))
+
 
 @st.cache_resource
 def config_retriever():
-    """Cria ou carrega base vetorial (ChromaDB)."""
+    # Cria ou carrega base vetorial (ChromaDB).
 
     persist_dir = "./chroma_db"
     os.makedirs(persist_dir, exist_ok=True)
@@ -340,10 +228,10 @@ def config_retriever():
                         texts.append(text)
 
         # Divide em chunks
-        """
-        Chunk_size - Define o tamanho dos chunks
-        Chunk_overlap - Define o quanto os chunks se sobrepõem
-        """
+
+        # Chunk_size - Define o tamanho dos chunks
+        # Chunk_overlap - Define o quanto os chunks se sobrepõem
+
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
         chunks = splitter.create_documents(texts)
 
@@ -352,12 +240,11 @@ def config_retriever():
         vectorstore.persist()
 
     # Retorna o retriever
-    """
-    O Maximal Marginal Relevance busca no banco os chunks mais relevantes e diversos para evitar a redundância de informações.
-        fetch_k - Define a quantidade de chunks que serão recuperados do banco
-        k - Define a quantidade de chunks que serão retornados a llm
-        lambda_mult - Controla o peso de Relevância e Diversidade 0.7(70% foco na relevância e 30% na diversidade)
-    """
+    # O Maximal Marginal Relevance busca no banco os chunks mais relevantes e diversos para evitar a redundância de informações.
+    # fetch_k - Define a quantidade de chunks que serão recuperados do banco
+    # k - Define a quantidade de chunks que serão retornados a llm
+    # lambda_mult - Controla o peso de Relevância e Diversidade 0.7(70% foco na relevância e 30% na diversidade)
+
     return vectorstore.as_retriever(
         search_type="mmr",
         search_kwargs={"k": 3, "fetch_k": 4, "lambda_mult": 0.7},
@@ -365,7 +252,7 @@ def config_retriever():
 
 
 def config_rag_chain(llm, retriever):
-    """Cria pipeline RAG: reformulação + busca + resposta final."""
+    # Cria pipeline RAG: reformulação + busca + resposta final.
 
     # Prompt que reformula perguntas do usuário
     context_prompt = ChatPromptTemplate.from_messages([
@@ -381,58 +268,82 @@ def config_rag_chain(llm, retriever):
 
     # Prompt principal de QA
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", """
-        Você é um assistente virtual especializado **exclusivamente** no módulo **SEI Julgar**.
-        Forneça respostas **técnicas e objetivas**, baseadas apenas na documentação oficial.
+        (
+            "system",
+            """
+            Você é um assistente virtual especializado **exclusivamente** no módulo **SEI Julgar**.
+            Forneça respostas **técnicas e objetivas**, baseadas apenas na documentação oficial.
 
-        REGRAS:
-        1. Não inventar informações.
-        2. Não responder temas fora do SEI Julgar.
-        3. Manter tom formal e instrutivo.
-        4. Se o tema for irrelevante, diga: "Posso responder apenas sobre o funcionamento do SEI Julgar."
-        """),
+            REGRAS:
+            1. Não inventar informações.
+            2. Não responder temas fora do SEI Julgar.
+            3. Manter tom formal e instrutivo.
+            4. Se o tema for irrelevante, diga: "Posso responder apenas sobre o funcionamento do SEI Julgar."
+            """
+        ),
         MessagesPlaceholder("chat_history"),
-        ("human", "Pergunta: {input}\n\nContexto relevante do manual:\n{context}")
+        (
+            "human",
+            "Pergunta: {input}\n\nContexto relevante do manual:\n{context}"
+        )
     ])
 
-    #envia a llm o prompt acima mais os documentos retornados pelo retriever
+    # envia a llm o prompt acima mais os documentos retornados pelo retriever
     qa_chain = create_stuff_documents_chain(llm, qa_prompt)
     return create_retrieval_chain(history_retriever, qa_chain)
-
 
 
 # ******************* INTERFACE DO CHAT *******************************
 
 def show_message(content, is_user=False):
-    """Renderiza mensagens no formato de bolhas."""
+    # Renderiza mensagens no formato de bolhas.
     bubble_class = "user-bubble" if is_user else "ai-bubble"
     st.markdown(f"<div class='chat-bubble {bubble_class}'>{content}</div>", unsafe_allow_html=True)
 
+
 def chat_response(rag_chain, user_input):
-    """Processa entrada do usuário e retorna resposta do modelo."""
-    st.session_state.chat_history.append(HumanMessage(content=user_input))
-    response = rag_chain.invoke({"input": user_input, "chat_history": st.session_state.chat_history})
-    answer = response.get("answer", "Erro ao gerar resposta.")
-    st.session_state.chat_history.append(AIMessage(content=answer))
+    # Processa a entrada do usuário e retorna a resposta do modelo.
+
+    # 1. Adiciona a mensagem do usuário ao histórico
+    st.session_state.chat_history.append(
+        HumanMessage(content=user_input)
+    )
+
+    # 2. Chama a RAG Chain (history-aware + retriever + QA)
+    response = rag_chain.invoke({
+        "input": user_input,
+        "chat_history": st.session_state.chat_history
+    })
+
+    # 3. Extrai resposta do modelo
+    answer = response.get("answer", "Erro ao gerar a resposta.")
+
+    # 4. Adiciona a resposta ao histórico
+    st.session_state.chat_history.append(
+        AIMessage(content=answer)
+    )
+
     return answer
 
 
 # ************************* EXECUÇÃO PRINCIPAL ************************************
 
-#Cria o histórico de mensagens
+# Cria o histórico de mensagens
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [AIMessage(content="Olá 👋, sou o assistente do SEI Julgar! Como posso ajudar?")]
+
 # Validação da chave da API
 if not os.getenv("GROQ_API_KEY"):
-    st.error("❌ GROQ_API_KEY não encontrada.")
+    st.error("GROQ_API_KEY não encontrada.")
     st.stop()
+
 # Inicialização do modelo e da base vetorial
 try:
     with st.spinner("Carregando modelo e base vetorial..."):
         llm = load_llm()
         retriever = config_retriever()
         rag_chain = config_rag_chain(llm, retriever)
-    st.success("✅ Sistema carregado com sucesso!")
+    #st.success("✅ Sistema carregado com sucesso!")
 
     # Botão de "limpar chat"
     col1, col2 = st.columns([5, 1])
@@ -453,13 +364,13 @@ try:
     if user_input:
         with chat_container:
             show_message(user_input, is_user=True)
-        placeholder = st.empty()
-        placeholder.markdown("<div class='ai-bubble'><em>Digitando...</em></div>", unsafe_allow_html=True)
+
         with st.spinner("Processando..."):
-            answer = chat_response(rag_chain, preprocess_input(user_input))
-        placeholder.empty()
+            answer = chat_response(rag_chain, user_input)
+
         with chat_container:
             show_message(answer, is_user=False)
+
 
 # Tratamento de erros
 except Exception as e:
