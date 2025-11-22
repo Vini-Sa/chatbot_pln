@@ -1,131 +1,121 @@
-[README.md](https://github.com/user-attachments/files/23529484/README.md)
-# Chatbot SEI Julgar
 
-Este projeto apresenta um assistente virtual desenvolvido para apoiar o uso do módulo SEI Julgar, oferecendo respostas rápidas e contextualizadas com base no manual oficial.
+#  Assistente Virtual do SEI Julgar
 
-O chatbot utiliza técnicas de Processamento de Linguagem Natural (PLN) em português, LangChain, modelos da Groq e a arquitetura RAG (Retrieval-Augmented Generation), permitindo buscar e interpretar trechos relevantes da documentação para orientar o usuário de forma precisa.
+Este projeto implementa um chatbot especializado no módulo SEI
+Julgar, utilizando **RAG (Retrieval-Augmented Generation)**,
+**LangChain**, **ChromaDB** e modelos **Groq**.\
+Ele auxilia usuários de secretarias e gabinetes a localizar informações
+do manual oficial de forma rápida e objetiva.
 
----
+------------------------------------------------------------------------
 
-## Requisitos do Sistema
+##  Tecnologias Utilizadas
 
-- **Python 3.11.9**  
-  (Versões mais novas como 3.12 ou 3.13 podem causar erros de compatibilidade com dependências.)
+-   **Python 3.11.9**
+-   **Streamlit** --- Interface do chatbot
+-   **LangChain** --- Pipeline de consultas
+-   **ChromaDB** --- Armazenamento vetorial local
+-   **HuggingFace Embeddings (bge-m3)**
+-   **PDF Loader (PyPDF2)**
+-   **Groq LLMs** (LLaMA 3.x, Mixtral)
 
-- **VS Code** instalado com a extensão **Python**.
-- **Git** instalado (para controle de versão e envio ao GitHub).
+------------------------------------------------------------------------
 
----
+##  Estrutura do Projeto
 
-## Passo a passo de instalação
+    chatbot_sei/
+    ├── chatbot_sei.py                     # Código principal
+    ├── Documentação SEI Julgar - Secretaria.pdf
+    ├── chroma_db/                         # Base vetorial (gerada automaticamente)
+    ├── requirements.txt
+    └── README.md
 
-### 1. Clonar o repositório
-Abra o terminal do VS Code e execute:
-```bash
-git clone https://github.com/seu-usuario/chatbot_sei_julgar.git
-cd chatbot_sei_julgar
+------------------------------------------------------------------------
+
+##  Instalação
+
+### 1️ Clonar o repositório
+
+``` bash
+git clone https://github.com/seu_usuario/chatbot_pln.git
+cd chatbot_pln
 ```
 
-### 2. Criar o ambiente virtual
+### 2️ Criar o ambiente virtual
 
-#### No **Windows (PowerShell ou Terminal do VS Code)**:
-```bash
+**Windows**
+
+``` bash
 python -m venv venv
-```
-
-Ativar o ambiente:
-```bash
 venv\Scripts\activate
 ```
 
-#### No **Linux/Mac**:
-```bash
+**Linux/Mac**
+
+``` bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. Instalar as dependências
-(Não esqueça de colocar o requirements.txt no projeto)
-Com o ambiente virtual ativado:
-```bash
+### 3️ Instalar dependências
+
+``` bash
 pip install -r requirements.txt
 ```
+A instalação das dependências demora um tempo consideravél, dado a instalação de várias bibliotecas.
 
-### 4. Instalar o modelo SpaCy (português)
+### 4️ Criar arquivo `.env`
 
-O modelo `pt_core_news_md` é necessário para o módulo de PLN:
-```bash
-python -m spacy download pt_core_news_md
+``` env
+GROQ_API_KEY=suachaveaqui
 ```
 
-> Caso sua rede bloqueie downloads diretos (como em redes institucionais), baixe manualmente via [https://github.com/explosion/spacy-models](https://github.com/explosion/spacy-models) e instale com:
-> ```bash
-> pip install caminho/para/pt_core_news_md.tar.gz
-> ```
+Obtenha sua chave em: https://console.groq.com
 
-### 5. Configurar variáveis de ambiente
+------------------------------------------------------------------------
 
-Crie um arquivo chamado `.env` na raiz do projeto e adicione:
-```
-GROQ_API_KEY="sua_chave_aqui"
-```
-Iremos deixar nossa chave para testes da disciplina:
-```
-GROQ_API_KEY="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"
-```
-> A chave é necessária para acessar o modelo da **Groq**.  
-> Você pode obtê-la em: [https://console.groq.com](https://console.groq.com)
+##  Executando o Chatbot
 
-### 6. Executar o chatbot
-
-No terminal (com o ambiente virtual ativo):
-```bash
+``` bash
 streamlit run chatbot_sei.py
 ```
----
-O navegador abrirá automaticamente na interface do chatbot.
-Primeiro carregamento do chatbot irá demorar um pouco, pois serão baixados
-os modelos e criado a base do Chroma.
 
-## Estrutura do Projeto
+A interface abrirá automaticamente no navegador.
 
+------------------------------------------------------------------------
+
+##  Como funciona?
+
+1.  O PDF da Documentação do SEI Julgar é carregado.
+2.  O texto é dividido em *chunks*.
+3.  Os embeddings são gerados usando bge-m3.
+4.  A ChromaDB indexa e armazena localmente.
+5.  O chatbot usa RAG para:
+    -   reformular perguntas
+    -   buscar trechos relevantes
+    -   responder apenas sobre o SEI Julgar
+
+------------------------------------------------------------------------
+
+##  Limpando a base vetorial
+
+Se quiser reconstruir a indexação:
+
+``` bash
+rmdir /s /q chroma_db  # Windows
+rm -rf chroma_db       # Linux/Mac
 ```
-chatbot_sei_julgar/
-├── chatbot_sei.py          # Código principal do assistente
-├── requirements.txt        # Dependências do projeto
-├── .env                    # Chave da API Groq
-├── chroma_db/              # Banco vetorial local (criado automaticamente)
-├── Documentação SEI Julgar - Secretaria.pdf  # Fonte de conhecimento
-└── README.md               # Este arquivo
-```
 
----
+------------------------------------------------------------------------
 
-## Funcionalidades
+## Para rodar o projeto no notebook Jupyter 
+1) Baixe o arquivo ProjetoFinal_PLN.ipynb.
+2) Baixe Documentação SEI Julgar - Secretaria.pdf
+3) Baixe o arquivo chatbot_sei.py
+4) Irá precisar da chave API Groq https://groq.com/
+5) Siga os passos presentes no notebook e importe os arquivos.
+   
+##  Autores
 
-- Processamento de linguagem natural (SpaCy + NLTK)
-- Expansão semântica e normalização de texto
-- Recuperação de contexto (RAG) com **ChromaDB**
-- Integração com **LLM Groq**
-- Interface interativa via **Streamlit**
-
----
-
-## Dicas
-
-- Se ocorrer erro ao carregar o modelo SpaCy, verifique a conexão de rede.
-- Para limpar a base vetorial e recarregar os embeddings:
-  ```bash
-  rmdir /s /q chroma_db     # PowerShell
-  rm -rf chroma_db          # Linux/Mac
-  ```
-- Evite fazer commit do arquivo `.env`.
-
----
-
-
-## Autor
-
-Desenvolvido por **Vinicius Sá** e **André Cacau**
-
-Assistente Virtual do SEI Julgar
+**Vinicius Sá e André Cacau**\
+Assistente Virtual do SEI Julgar.
