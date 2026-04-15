@@ -1,3 +1,11 @@
 .env
 .venv
 venv
+
+__pycache__/
+*.bin
+chroma_db/
+chroma_db_runs/
+
+dist/
+build/

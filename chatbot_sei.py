@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 import os
 import time
+import shutil
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import AIMessage, HumanMessage
@@ -18,6 +19,9 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 
+os.environ["CURL_CA_BUNDLE"] = ""
+os.environ["REQUESTS_CA_BUNDLE"] = ""
+os.environ["HF_HUB_DISABLE_SSL_VERIFICATION"] = "1"
 
 # ***************CONFIGURAÇÕES DO STREAMLIT E INTERFACE*********************
 
@@ -198,46 +202,77 @@ st.markdown(
 # ************************** FUNÇÕES DE INDEXAÇÃO ******************************************
 
 @st.cache_resource
-def load_llm():
+def load_llm(model_id, temp):
     # Carrega o modelo de linguagem da API Groq
-    return ChatGroq(model=id_model, temperature=temperature, api_key=os.getenv("GROQ_API_KEY"))
+    return ChatGroq(model=model_id, temperature=temp, api_key=os.getenv("GROQ_API_KEY"))
 
 
-@st.cache_resource
-def config_retriever():
-    # Cria ou carrega base vetorial (ChromaDB).
+def delete_vector_database():
+    """Deleta completamente a base de dados vetorial existente."""
+    persist_dir = "./chroma_db"
+    if os.path.exists(persist_dir):
+        try:
+            shutil.rmtree(persist_dir)
+        except Exception as e:
+            print(f"Erro ao deletar base: {e}")
 
+
+def create_vector_database_from_pdfs():
+    """Cria a base de dados vetorial a partir dos PDFs na pasta do projeto."""
     persist_dir = "./chroma_db"
     os.makedirs(persist_dir, exist_ok=True)
 
     # Embeddings
     embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")
 
-    if os.path.exists(os.path.join(persist_dir, "chroma.sqlite3")):
+    # Carrega PDFs da pasta do projeto
+    pdf_files = [f for f in os.listdir(".") if f.endswith(".pdf")]
+    
+    if not pdf_files:
+        print("Aviso: Nenhum arquivo PDF encontrado na pasta do projeto")
+        return None
+
+    texts = []
+    for file in pdf_files:
+        try:
+            reader = PdfReader(file)
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    texts.append(text)
+        except Exception as e:
+            print(f"Erro ao ler {file}: {e}")
+
+    if not texts:
+        print("Aviso: Nenhum texto foi extraído dos PDFs")
+        return None
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    chunks = splitter.create_documents(texts)
+
+    vectorstore = Chroma.from_documents(chunks, embedding=embeddings, persist_directory=persist_dir)
+    vectorstore.persist()
+    
+    return vectorstore
+
+
+@st.cache_resource
+def config_retriever():
+    persist_dir = "./chroma_db"
+    
+    # Embeddings
+    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")
+
+    # Verifica se a base existe
+    if os.path.exists(persist_dir) and os.path.exists(os.path.join(persist_dir, "chroma.sqlite3")):
+        # Base existe, carrega
         vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
     else:
-        # Carrega o PDF e extrai o texto
-        pdf_files = ["Documentação SEI Julgar - Secretaria.pdf"]
-        texts = []
-        for file in pdf_files:
-            if os.path.exists(file):
-                reader = PdfReader(file)
-                for page in reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        texts.append(text)
-
-        # Divide em chunks
-
-        # Chunk_size - Define o tamanho dos chunks
-        # Chunk_overlap - Define o quanto os chunks se sobrepõem
-
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-        chunks = splitter.create_documents(texts)
-
-        # Cria o banco vetorial com ChromaDB
-        vectorstore = Chroma.from_documents(chunks, embedding=embeddings, persist_directory=persist_dir)
-        vectorstore.persist()
+        # Base não existe, cria a partir dos PDFs
+        vectorstore = create_vector_database_from_pdfs()
+        if vectorstore is None:
+            st.error("❌ Erro: Nenhum arquivo PDF encontrado na pasta do projeto!")
+            st.stop()
 
     # Retorna o retriever
     # O Maximal Marginal Relevance busca no banco os chunks mais relevantes e diversos para evitar a redundância de informações.
@@ -249,6 +284,24 @@ def config_retriever():
         search_type="mmr",
         search_kwargs={"k": 3, "fetch_k": 4, "lambda_mult": 0.7},
     )
+
+
+def is_question_or_statement(text):
+    """
+    Detecta se a entrada é uma pergunta ou uma assertiva/afirmação.
+    Retorna True se for pergunta, False se for assertiva/informação.
+    """
+    text_clean = text.strip().lower()
+    
+    # Indicadores de pergunta
+    question_indicators = ["?", "qual", "quais", "como", "por que", "porquê", "quando", "onde", 
+                          "o que", "pode me", "poderia", "consegue", "é possível", "sabe"]
+    
+    is_question = (
+        text.endswith("?") or 
+        any(text_clean.startswith(word) for word in question_indicators)
+    )
+    return is_question
 
 
 def config_rag_chain(llm, retriever):
@@ -266,25 +319,37 @@ def config_rag_chain(llm, retriever):
         llm=llm, retriever=retriever, prompt=context_prompt
     )
 
-    # Prompt principal de QA
+    # Prompt principal de QA - TOTALMENTE BASEADO NO MANUAL
     qa_prompt = ChatPromptTemplate.from_messages([
         (
             "system",
             """
-            Você é um assistente virtual especializado **exclusivamente** no módulo **SEI Julgar**.
-            Forneça respostas **técnicas e objetivas**, baseadas apenas na documentação oficial.
+Você é um assistente virtual especializado **exclusivamente** no módulo **SEI Julgar**.
+Seu ÚNICO propósito é responder dúvidas com base na documentação oficial do manual.
 
-            REGRAS:
-            1. Não inventar informações.
-            2. Não responder temas fora do SEI Julgar.
-            3. Manter tom formal e instrutivo.
-            4. Se o tema for irrelevante, diga: "Posso responder apenas sobre o funcionamento do SEI Julgar."
-            """
+========== REGRAS FUNDAMENTAIS ==========
+1. RESPONDA APENAS COM BASE NO MANUAL: use exclusivamente as informações do contexto fornecido.
+2. NÃO USE INFORMAÇÕES DO USUÁRIO COMO VERDADE: o usuário pode fornecer informações incorretas no chat - ignore-as.
+3. NÃO INVENTE RESPOSTAS: se a informação não estiver no manual, diga que não há informação suficiente.
+4. SE TIVER DÚVIDA: responda "De acordo com o manual disponível, não há informações suficientes para responder essa questão com precisão."
+5. PODE CORRIGIR ERROS: se o usuário disser algo que contradiz o manual, corrija com gentileza, citando o manual.
+6. MANTENHA A HUMILDADE: sua fonte de verdade é APENAS o manual fornecido.
+
+========== FORMATO DE RESPOSTA ==========
+- Respostas técnicas, objetivas e diretas
+- Cite a documentação quando apropriado
+- Se for uma assertiva (não-pergunta), verifique se a acertiva é correta de acordo com o manual e corrija se necessário, caso não seja possível aferir a assertiva com o manual, responda que não há informação suficiente para confirmar ou negar a afirmação, mas sugira onde o usuário pode procurar aprofundar suas informações caso tenha isso na base de conhecimento.
+- Se for uma pergunta fora do escopo do manual ou do SEI Julgar, responda: "Entendo, mas minha função é esclarecer dúvidas sobre o SEI Julgar. Tem alguma pergunta sobre o funcionamento?"
+- Mantenha tom formal e profissional
+
+========== CONTEXTO DISPONÍVEL DO MANUAL ==========
+{context}
+"""
         ),
         MessagesPlaceholder("chat_history"),
         (
             "human",
-            "Pergunta: {input}\n\nContexto relevante do manual:\n{context}"
+            "{input}"
         )
     ])
 
@@ -303,22 +368,34 @@ def show_message(content, is_user=False):
 
 def chat_response(rag_chain, user_input):
     # Processa a entrada do usuário e retorna a resposta do modelo.
+    
+    # Detecta se é pergunta ou assertiva
+    is_question = is_question_or_statement(user_input)
 
     # 1. Adiciona a mensagem do usuário ao histórico
     st.session_state.chat_history.append(
         HumanMessage(content=user_input)
     )
 
-    # 2. Chama a RAG Chain (history-aware + retriever + QA)
+    # 2. Se for assertiva/informação, retorna resposta padrão
+    if not is_question:
+        response_text = (
+            "Entendo o que você disse, mas minha função é esclarecer dúvidas sobre o funcionamento do SEI Julgar "
+            "com base na documentação oficial. Tem alguma pergunta sobre o sistema?"
+        )
+        st.session_state.chat_history.append(AIMessage(content=response_text))
+        return response_text
+
+    # 3. Chama a RAG Chain (history-aware + retriever + QA)
     response = rag_chain.invoke({
         "input": user_input,
         "chat_history": st.session_state.chat_history
     })
 
-    # 3. Extrai resposta do modelo
+    # 4. Extrai resposta do modelo
     answer = response.get("answer", "Erro ao gerar a resposta.")
 
-    # 4. Adiciona a resposta ao histórico
+    # 5. Adiciona a resposta ao histórico
     st.session_state.chat_history.append(
         AIMessage(content=answer)
     )
@@ -332,15 +409,119 @@ def chat_response(rag_chain, user_input):
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [AIMessage(content="Olá 👋, sou o assistente do SEI Julgar! Como posso ajudar?")]
 
+if "rebuild_db" not in st.session_state:
+    st.session_state.rebuild_db = False
+
+if "uploaded_files_cache" not in st.session_state:
+    st.session_state.uploaded_files_cache = None
+
+# ================== SIDEBAR: GERENCIAMENTO DE BASE DE CONHECIMENTO ==================
+
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("📚 Gerenciar Base de Conhecimento")
+    
+    # Upload de documentos
+    uploaded_files = st.file_uploader(
+        "Adicionar/Atualizar documentos (PDF):",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help="Faça upload de PDFs para atualizar a base de conhecimento. Se houver PDF com mesmo nome, será sobrescrito."
+    )
+    
+    if uploaded_files:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.caption(f"📄 {len(uploaded_files)} arquivo(s)")
+        with col2:
+            if st.button("🔄 Salvar e Reconstruir", key="rebuild_btn", use_container_width=True):
+                st.session_state.rebuild_db = True
+                st.session_state.uploaded_files_cache = uploaded_files
+    
+    # Botão de resetar base
+    if st.button("🗑️ Resetar Base", key="reset_btn", use_container_width=True, help="Deleta a base atual e recria do zero"):
+        delete_vector_database()
+        st.cache_resource.clear()
+        st.success("✅ Base deletada!")
+        st.rerun()
+    
+    # Informações sobre a base
+    st.markdown("---")
+    st.caption("ℹ️ Status da Base")
+    persist_dir = "./chroma_db"
+    if os.path.exists(persist_dir) and os.path.exists(os.path.join(persist_dir, "chroma.sqlite3")):
+        st.success(f"✅ Base de conhecimento ativa")
+        # Conta os PDFs na pasta do projeto
+        pdf_files = [f for f in os.listdir(".") if f.endswith(".pdf")]
+        if pdf_files:
+            st.info(f"📄 {len(pdf_files)} PDF(s) carregado(s)")
+            for pdf in pdf_files:
+                st.caption(f"  • {pdf}")
+    else:
+        st.warning("⚠️ Base não inicializada")
+
+# ============================================================================
+
 # Validação da chave da API
 if not os.getenv("GROQ_API_KEY"):
     st.error("GROQ_API_KEY não encontrada.")
     st.stop()
 
+# Função auxiliar para reconstruir a base
+def rebuild_vector_database(uploaded_files):
+    """
+    Reconstrói a base vetorial com novos documentos.
+    1. Salva os PDFs na pasta do projeto (sobrescrevendo se necessário)
+    2. Deleta a base anterior
+    3. Cria a nova base a partir dos PDFs
+    """
+    try:
+        with st.spinner("💾 Salvando PDFs na pasta do projeto..."):
+            # Salva os PDFs uploadados na pasta do projeto
+            for uploaded_file in uploaded_files:
+                try:
+                    file_path = uploaded_file.name
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    st.success(f"✅ {uploaded_file.name} salvo com sucesso!")
+                except Exception as e:
+                    st.error(f"❌ Erro ao salvar {uploaded_file.name}: {e}")
+                    return False
+        
+        with st.spinner("🔄 Deletando base anterior..."):
+            # Deleta a base anterior
+            delete_vector_database()
+        
+        with st.spinner("🔨 Reconstruindo base vetorial..."):
+            # Cria nova base
+            vectorstore = create_vector_database_from_pdfs()
+            if vectorstore is None:
+                st.error("❌ Erro ao criar nova base!")
+                return False
+            
+            # Conta chunks
+            all_texts = vectorstore.similarity_search("")
+            st.success(f"✅ Base vetorial reconstruída com sucesso!")
+            return True
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao reconstruir base: {str(e)}")
+        return False
+
+# Reconstruir base se necessário
+if st.session_state.rebuild_db and "uploaded_files_cache" in st.session_state:
+    if rebuild_vector_database(st.session_state.uploaded_files_cache):
+        st.session_state.rebuild_db = False
+        st.session_state.uploaded_files_cache = None
+        # Limpa cache de config_retriever para forçar recarga
+        st.cache_resource.clear()
+        # Força recarga do Streamlit para carregar a nova base
+        st.rerun()
+
 # Inicialização do modelo e da base vetorial
 try:
     with st.spinner("Carregando modelo e base vetorial..."):
-        llm = load_llm()
+        llm = load_llm(id_model, temperature)
         retriever = config_retriever()
         rag_chain = config_rag_chain(llm, retriever)
     #st.success("✅ Sistema carregado com sucesso!")
