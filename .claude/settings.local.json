@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/Scripts/pip install *)",
+      "Bash(python -c \"import langchain; print\\(langchain.__version__\\)\")",
+      "Bash(python -c \"from langchain.chains import create_history_aware_retriever, create_retrieval_chain; print\\('chains OK'\\)\")",
+      "Bash(python -c \"from langchain.chains.combine_documents import create_stuff_documents_chain; print\\('combine_documents OK'\\)\")",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(.venv/Scripts/python -c \"import langchain; print\\(langchain.__version__\\); import pkgutil, langchain; print\\([m.name for m in pkgutil.iter_modules\\(langchain.__path__\\)]\\)\")",
+      "Bash(.venv/Scripts/python -c \"import fitz; import torchvision; print\\('fitz:', fitz.__version__\\); print\\('torchvision OK'\\)\")"
+    ]
+  }
+}
